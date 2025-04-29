@@ -1,0 +1,151 @@
+---
+title: "Curso Teórico y Práctico en Análisis Metagenómico - Universidad de los Andes"
+subtitle: "Guía 03. Caracterización taxonómica de bacterias a partir de datos metagenómicos"
+author: "**Profesores:** Alejandro Reyes Muñoz, Maryam Chaib De Mares, Alejandro Castellanos Sánchez"
+date: "Noviembre 18, 2022"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    number_sections: true
+---
+
+Para hacer la asignación taxonómica de nuestros datos de metagenómica, vamos a utilizar [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan) y [Kraken 2](https://ccb.jhu.edu/software/kraken2/). Cómo ya saben, existe una tercera opción que es utilizar [MEGAN6](https://uni-tuebingen.de/en/fakultaeten/mathematisch-naturwissenschaftliche-fakultaet/fachbereiche/informatik/lehrstuehle/algorithms-in-bioinformatics/software/megan6/), sin embrago, por las características del servidor del Sinchi, no va a ser posible ejecutar esta herramienta.
+
+En cualquier herramienta de clasificación taxonómica es necesario el uso de base de datos creadas y/o mantenidas por los desarrolladores de estas herramientas. Es aquí donde vamos a tener la mayor limitación con esta tarea debido a que estas bases de datos suelen ser MUY grandes (variando entre las 2GB y 46GB comprimidas y entre 23GB y más 190GB cuando ya están listas para ser usadas). Ahora, el almacenamiento de estas bases de datos realmente no es un problema ya que el servidor del Sinchi tiene la capacidad suficiente (y de sobra). El verdadero limitante es que algunos de los programas requieren que las bases de datos estén completamente cargadas en memoria para poder ser usadas, y en este ámbito el servidor del Sinchi no posee con la capacidad suficiente en algunos casos.
+
+En todo caso, les descargamos las bases de datos necesarias para poder correr las herramientas que vamos a utilizar en esta guía. Debido a que este es un proceso demorado y pesado, estas bases de datos se las instalamos en una carpeta afuera del directorio destinado para esta capacitación para que les quede disponible. La ubicación de estas bases de datos es: */home/sesinchi/databases*.
+
+Para comenzar ya con la guía como tal, diríjase al directorio *07-reads-taxonomic-assignment*.
+
+# Asignación taxonómica utilizando MetaPhlAn4
+La ruta de la base de datos específica de [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan) es la siguiente: *~/databases/metaphlan*. Acá les dejamos el [manual de usuario](https://github.com/biobakery/MetaPhlAn) de [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan) para que puedan consultarlo. 
+
+Active el ambiente _metaphlan4_ de Conda. A continuación les proporcionamos el script para hacer la asignación taxonómica utilizando [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan). 
+
+```{bash eval=FALSE}
+#!/bin/bash
+
+# Fijar el directorio 07-reads-taxonomic-assignment
+cd ~/curso-uniandes/usuario-sinchi/07-reads-taxonomic-assignment/
+
+# Activar el ambiente de Conda de MetaPhlAn4
+source ~/anaconda3/bin/activate
+conda activate metaphlan4
+
+# Determinar el perfil taxonómico de la muestra
+path=~/curso-uniandes/usuario-sinchi/01-reads-subsample/
+ext=_001_subsample.fastq
+db=~/databases/metaphlan
+for sample in GM1776_1_L001_R GM1776_2_L001_R; do
+  out=$(basename $sample _L001_R)_metaphlan
+  forward=${path}${sample}1${ext}
+  reverse=${path}${sample}2${ext}
+  metaphlan $forward,$reverse \
+  --input_type fastq --bowtie2db $db \
+  --bowtie2out ${out}_bowtie2.bz2 -o ${out}.tsv \
+  --nproc 6
+done
+```
+
+[MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan) entrega dos archivos de salida. Un archivos en formato tabular con la caracterización taxonómica de la muestra y con su estimado de abundancia relativa para cada entidad taxonómica (el archivo _.tsv_), y un archivo intermedio de mapeo (el _bowtie2.bz2), que básicamente sirve para poder volver a correr el análisis mucho más rápido en caso de que sea necesario repetirlo.
+
+Podemos unir los resultados de todas las muestras utilizando la utilidad `merge_metaphlan_tables.py` de la siguiente manera:
+
+```{bash eval=FALSE}
+merge_metaphlan_tables.py *_metaphlan.tsv -o taxonomy_assignation_metaphlan.tsv
+```
+
+*taxonomy_assignation_metaphlan.tsv* será el archivo con la caracterización taxonómica de ambas muestras. Con un archivo como este, ya se pueden realizar todos los cálculos de diversidad como los que se realizan con datos de amplicón de 16S en [Qiime2](https://qiime2.org/). De hecho, se le puede especificar a [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan) que entregue los resultados en un formato que sea admisible por [Qiime2](https://qiime2.org/) o hay muchas utilidades disponibles para convertir este tipo de archivo que obtuvimos a uno compatible con [Qiime2](https://qiime2.org/).
+
+[Krona](https://github.com/marbl/Krona/wiki) es una herramienta que nos permite explorar visualmente nuestros resultados de perfilamiento taxonómico. Esta herramientas requiere de un formato de entrada específico, así que podemos utilizar la utilidad `metaphlan2krona.py` para pasar del formato que nos entregó [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan) al formato que recibe [Krona](https://github.com/marbl/Krona/wiki):
+
+```{bash eval=FALSE}
+metaphlan2krona.py -p taxonomy_assignation_metaphlan.tsv -k taxonomy_assignation_metaphlan2krona.tsv
+```
+
+Finalmente, para correr [Krona](https://github.com/marbl/Krona/wiki) debemos activar el ambiente de Conda _krona_ y correr:
+
+```{bash eval=FALSE}
+ktImportText taxonomy_assignation_metaphlan2krona.tsv -o taxonomy_assignation_metaphlan.html
+```
+
+El resultado es un archivo HTML que puede descragar en su computador y explorar desde un browser.
+
+# Asignación taxonómica utilizando Kraken2
+
+La ruta a la base de datos de que descargamos para [Kraken 2](https://ccb.jhu.edu/software/kraken2/) es *~/databases/kraken/standard-16*. Esta base de datos es un subconjunto de la base de datos *standard* de [Kraken 2](https://ccb.jhu.edu/software/kraken2/) debido a que la base de datos completa era muy grande y requería ser cargada completamente en memoria. Acá puede encontrar todas las [bases de datos](https://benlangmead.github.io/aws-indexes/k2) que tiene [Kraken 2](https://ccb.jhu.edu/software/kraken2/), además, tenga en cuenta que puede crear una "personalizada". Acá le dejamos el [manual de usuario](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown) de [Kraken 2](https://ccb.jhu.edu/software/kraken2/).
+
+Active el ambiente *kraken2* de Conda. A continuación les proporcionamos el script para hacer la asignación taxonómica utilizando [Kraken 2](https://ccb.jhu.edu/software/kraken2/):
+
+```{bash eval=FALSE}
+#!/bin/bash
+
+# Fijar el directorio 07-reads-taxonomic-assignment
+cd ~/curso-uniandes/usuario-sinchi/07-reads-taxonomic-assignment/
+
+# Activar el ambiente de Conda de Kraken2
+source ~/anaconda3/bin/activate
+conda activate kraken2
+
+path=~/curso-uniandes/usuario-sinchi/01-reads-subsample/
+ext=_001_subsample.fastq
+db=~/databases/kraken/standard-16
+for sample in GM1776_1_L001_R GM1776_2_L001_R; do
+  out=$(basename $sample _L001_R)_kraken
+  forward=${path}${sample}1${ext}
+  reverse=${path}${sample}2${ext}
+  kraken2 --threads 8 \
+    --db $db \
+    --paired \
+    --output ${out}.tsv \
+    --report ${out}_report.tsv \
+    $forward $reverse
+done
+```
+
+[Kraken 2](https://ccb.jhu.edu/software/kraken2/) entrega dos archivos de salida. El que es *_kraken.tsv* y el *_kraken_report.tsv*. Ambos son archivos en formato tabular con la caracterización taxonómica de la muestra, sin embargo, en  general el archivo *report* suele ser más útil además de que es más legible a primera vista. 
+
+Adicionalmente, existe una herramienta que permite estimar la abundancia relativa para cada taxón calculada por [Kraken 2](https://ccb.jhu.edu/software/kraken2/). Esta herramienta es [Bracken](https://github.com/jenniferlu717/Bracken). Para utilizarla, active el ambiente de Conda *bracken* y utilice el siguiente script:
+
+```{bash eval=FALSE}
+#!/bin/bash
+
+# Fijar el directorio 07-reads-taxonomic-assignment
+cd ~/curso-uniandes/usuario-sinchi/07-reads-taxonomic-assignment/
+
+# Activar el ambiente de Conda de Bracken
+source ~/anaconda3/bin/activate
+conda activate bracken
+
+kmer=~/databases/kraken/standard-16/database150mers.kmer_distrib
+level=G
+for sample in *kraken_report.tsv; do
+  out=$(basename $sample _kraken_report.tsv)_bracken
+  est_abundance.py -i $sample -k $kmer -o ${out}.tsv -l $level -t 10
+done
+```
+
+[Bracken](https://github.com/jenniferlu717/Bracken) también nos entrega un archivo en formato tabular similar al que nos entrega [Kraken 2](https://ccb.jhu.edu/software/kraken2/), solo que posee la información de la estimación de la abundancia relativa colapsada a cierto nivel taxonómico determinado.
+
+Podemos unir los resultados de todas las muestras utilizando la utilidad `combine_kreports.py` (que habíamos descargado previamente) de la siguiente manera:
+
+```{bash eval=FALSE}
+python combine_kreports.py -r *_kraken_report.tsv -o taxonomy_assignation_kraken.tsv
+```
+
+Nuevamente utilicemos [Krona](https://github.com/marbl/Krona/wiki) para visualizar los resultados de nuestro perfilamiento taxonómico. De manera similar a como ocurrió con [MetaPhlAn 4.0](https://huttenhower.sph.harvard.edu/metaphlan), necesitamos convertir nuestros archivos a un formato que acepte [Krona](https://github.com/marbl/Krona/wiki), esto lo haremos con la utilidad `kreport2krona.py` (que también habíamos descargado previamente):
+
+```{bash eval=FALSE}
+python kreport2krona.py -r taxonomy_assignation_kraken.tsv -o taxonomy_assignation_kraken2krona.tsv
+```
+
+Finalmente, podemos correr [Krona](https://github.com/marbl/Krona/wiki) con nuestros resultados de [Kraken 2](https://ccb.jhu.edu/software/kraken2/) (no se le olvide volver a activar el ambiento de Conda _krona_):
+
+```{bash eval=FALSE}
+ktImportText taxonomy_assignation_kraken2krona.tsv -o taxonomy_assignation_kraken.html
+```
+
+Compare los resultados obtenidos mediante ambas aproximaciones. ¿Se parecen?

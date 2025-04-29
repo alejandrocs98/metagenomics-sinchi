@@ -1,0 +1,136 @@
+---
+title: "Curso Teórico y Práctico en Análisis Metagenómico - Universidad de los Andes"
+subtitle: "Guía 02. Ensamblaje de (meta)genomas y mapeo de lecturas a genomas de referencia"
+author: "**Profesores:** Alejandro Reyes Muñoz, Maryam Chaib De Mares, Alejandro Castellanos Sánchez"
+date: "Noviembre 18, 2022"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    number_sections: true
+---
+
+# Ensamblaje de metagenomas
+
+Diríjase a la carpeta *04-metagenomes-assembly*.
+
+Para el ensamblaje de nuestros metagenomas vamos a utilizar la función [metaSPAdes](https://cab.spbu.ru/software/meta-spades/) del software [SPAdes](https://github.com/ablab/spades) que está instalado en el servidor del Sinchi en un ambiente de Conda llamado _spades_. Vamos a utilizar el conjunto de lecturas submuestreadas limpias (que generamos previamente y se encuentran en el directorio *02-reads-clean*). 
+
+1. A continuación les proporcionamos un script para realizar el ensamblaje de ambas muestras utilizando [metaSPAdes](https://github.com/ablab/spades#meta):
+
+```{bash eval=FALSE}
+#!/bin/bash
+
+# Fijar el directorio 04-metagenome-assembly
+cd ~/curso-uniandes/usuario-sinchi/04-metagenomes-assembly
+
+# Activar el ambiente de Conda de SPAdes
+source ~/anaconda3/bin/activate
+conda activate spades
+
+# Ensamblar los metagenomas utilizando metaSPAdes
+path=~/curso-uniandes/usuario-sinchi/01-reads-subsample/
+ext=_001_subsample.fastq;
+for sample in GM1776_1_L001_R GM1776_2_L001_R; do
+  out=$(basename $sample _L001_R)
+  forward=${path}${sample}1${ext}
+  reverse=${path}${sample}2${ext}
+  metaspades.py -1 $forward -2 $reverse -o $out
+done
+```
+
+A pesar de que estamos utilizando un subconjunto de datos de menos del 10% de los datos originales, este procesos va a tomar un tiempo, así que le vamos a dar un par de consejos de como correr el script.
+
+i. Asigne la salida de la ejecución del script en otro archivo, e.i. si por ejemplo guardó el script de arriba con el nombre *metaspades_assembly.sh*, asigne la salida en otro archivo como *metaspades_assembly.log*. Esto con el objetivo de después poder examinar cómo fue la ejecución del programa.
+
+ii. Libere la consola para poder seguir realizando otros procesos utilizando `&` (ampersand) al final del comando.
+
+Entonces, al correr el programa utilizaríamos algo como:
+```{bash eval=FALSE}
+bash metaspades_assembly.sh > metaspades_assembly.log &
+```
+```
+[1] 971729
+```
+
+Ahora el único detalle será que a ciencia cierta no sabremos en cuanto terminará el proceso. No obstante, podemos tratar de inferir esta información verificando qué procesos están corriendo actualmente en el servidor. Esto lo podemos hacer con el comando `top`. Esto va a desplegar en el prompt la lista de todos los procesos que se están ejecutando en cada momento (para salirse de esta lista teclear `q`), y si por ejemplo vemos un proceso que está siendo ejecutado por nuestro usuario y que además esté usando algún programa que hayamos indicado (en este caso SPAdes), podemos sospechar que el proceso sigue en ejecución. Una vez termine de correr el programa, en el prompt saldrá un mensaje informando:
+
+```
+[1]+  Done                    bash metaspades_assembly.sh > metaspades_assembly.log
+```
+
+Una vez metaSPAdes termine de correr, verifique cómo fue la ejecución del programa (revise el archivo *metaspades_assembly.log*). Si todo salió bien, revise sus resultados. metaSPAdes crea un directorio por metagenoma (muestra). Este directorio posee varios archivos que creo SPAdes como pasos intermedios para construir el metagenoma. El resultado que más nos interesa es el archivo *contings.fasta* que será el archivo con nuestro metagenoma ensamblado. Le recomendamos que los inspecciones de diferentes manera (ábralo con `less`, utilice `seqkit stats` para obtener algunas estadísticas del tamaño del archivo, etc.).
+
+# Evaluación de la calidad de los ensamblajes
+
+Para evaluar la calidad del ensamblaje de nuestros metagenomas vamos a utilizar [QUAST](https://quast.sourceforge.net/).  Esta herramienta nos va a entregar un reporte con distintas métricas de los ensamblajes que le demos como entrada.
+
+Diríjase a la carpeta *05-metagenomes-quality* y active el ambiente de _quast_ de Conda. El comando que debemos utilizar es el siguiente:
+
+```{bash eval=FALSE}
+quast ~/curso-uniandes/usuario-sinchi/04-metagenomes-assembly/GM1776_*/contigs.fasta > metagenomes_quality.log &
+```
+
+En el comando de arriba le indicamos a QUAST que evalúe la calidad de nuestros dos metagenomas. El reporte que nos entrega QUAST viene en formato HTML, así que es necesario descargarlo en nuestros computadores y abrirlo en un browser. El reporte es bastante claro, sin embargo, información detallada sobre cómo se deben interpretar los resultados se puede encontrar en esta página web: https://quast.sourceforge.net/docs/manual.html#sec3.
+
+# Mapeo de lecturas a genomas de referencia y estimación de la abundancia
+Diríjase a la carpeta *06-reads-mapping-genomes*.
+
+Otra forma en que podemos evaluar la representación de distintos organismos en nuestras muestras es directamente mapeando las lecturas de secuenciación sobre genomas de referencia. Hacer estos no solamente nos va a permitir determinar si encontramos los organismos o no en nuestros datos, sino que también nos va a permitir hacer un estimado de la abundancia de dichos organismos en nuestra muestra. Para esto, vamos a utilizar [BBmap](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbmap-guide/). Utilizaremos `bbmap.sh` para hacer el mapeo de nuestras lecturas a nuestros genomas de referencia y `pileup.sh` para obtener las estadísticas de cobertura de alcanzada en nuestras muestras en nuestros genomas de referencia. 
+
+Antes, debemos concatenar todos nuestros genomas/contigs en un solo archivo fasta. Igual se podrá distinguir a cuál genoma están mapenado las reads ya que se conserva la infromación del encabezado. Para esto podemos utilizar:
+
+```{bash eval=FALSE}
+cat ~/curso-uniandes/usuario-sinchi/00-genomes-reference/*.fasta > reference.fasta
+```
+
+A continuación les proporcionamos el script que necesitamos para ejecutar esta tarea:
+
+```{bash eval=FALSE}
+#!/bin/bash
+
+# Fijar el directorio 03-metagenome-assembly
+cd ~/curso-uniandes/usuario-sinchi/06-reads-mapping-genomes
+
+# Activar el ambiente de Conda de BBmap
+source ~/anaconda3/bin/activate
+conda activate bbmap
+
+# Mapear lecturas a genoma de referencia y generar covstats
+path=~/curso-uniandes/usuario-sinchi/01-reads-subsample/
+ext=_001_subsample.fastq
+for sample in GM1776_1_L001_R GM1776_2_L001_R; do
+  name=$(basename $sample _L001_R)
+  forward=${path}${sample}1${ext}
+  reverse=${path}${sample}2${ext}
+  bbmap.sh ref=reference.fasta in=$forward in2=$reverse \
+  out=${name}.sam outu=${name}_unmapped.sam \
+  slow=t physcov=t maxindel=300 minid=0.8
+    
+  pileup.sh ref=reference.fasta in=${name}.sam out=${name}_covstats.tsv rpkm=${name}_rpkm.tsv
+done
+```
+
+La salida estándar de un mapeo de lecturas a un genoma de referencia es un archivo [SAM](https://samtools.github.io/hts-specs/SAMv1.pdf), y es de hecho el resultado que nos entrega `bbmap.sh`. Este formato posee información sobre todas las lecturas de secuenciación y de si alinearon o no contra el genoma de referencia, y si lo hicieron, de qué forma y dónde. Hay muchas cosas que se pueden hacer con estos archivos, el paquete [SAMtools](https://www.htslib.org/doc/samtools.html) en particular viene un una gran cantidad de utilidades para analizar estos archivos y obtener información relevante de los mapeos. A continuación utilizaremos la función `stats` de [SAMtools](https://www.htslib.org/doc/samtools.html) para obtener estadísticas básicas del mapeo de nuestras lecturas a nuestro genoma de referencia. Utilice el siguiente script:
+
+```{bash eval=FALSE}
+#!/bin/bash
+
+# Fijar el directorio 03-metagenome-assembly
+cd ~/curso-uniandes/usuario-sinchi/06-reads-mapping-genomes
+
+# Activar el ambiente de SAMtools
+source ~/anaconda3/bin/activate
+conda activate samtools
+
+# Evaluar las características de los mapeos
+for sample in GM1776_1 GM1776_2; do
+  samtools stats ${sample}.sam > ${sample}_stats.txt
+done
+```
+
+Examine los archivos *_stats.txt* para hacerse una idea de cómo fueron los mapeos.
+
+El resultado de `pileup.sh` son los archivos *_covstats.tsv* y *_rpkm.tsv*, que son archivos en formato tabular que poseen estadísticas sobre la cobertura y el RPKM de cada genoma en la muestra. Examínelos.
